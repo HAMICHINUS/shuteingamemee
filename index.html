@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ボトムディフェンダー：センチピード・サバイバー</title>
+<style>
+  body, html {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background-color: #050510; color: #fff;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  canvas { display: block; }
+  #ui {
+    position: absolute; top: 15px; left: 15px; pointer-events: none;
+    text-shadow: 0 0 5px rgba(0,0,0,1); z-index: 10;
+  }
+  h2 { margin: 0 0 5px 0; font-size: 18px; color: #00ff88; }
+  p { margin: 3px 0; font-size: 14px; font-weight: bold; }
+  .text-green { color: #00ff88; }
+  .text-yellow { color: #ffeb3b; }
+  .text-blue { color: #00e5ff; }
+  .text-red { color: #ff3366; }
+
+  #gameover {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: none; text-align: center; background: rgba(5,5,15,0.95);
+    padding: 30px; border-radius: 15px; border: 2px solid #ff3366;
+    box-shadow: 0 0 20px rgba(255,51,102,0.4); z-index: 20; width: 80%; max-width: 350px;
+  }
+  #gameover h1 { margin-top: 0; color: #ff3366; font-size: 28px;}
+  
+  button {
+    padding: 15px 20px; font-size: 18px; cursor: pointer; margin-top: 20px;
+    background: #00ff88; color: #000; border: none; font-weight: bold;
+    border-radius: 10px; width: 100%; box-shadow: 0 4px 0 #00cc6a;
+    transition: transform 0.1s;
+  }
+  button:active { transform: translateY(4px); box-shadow: 0 0 0 #00cc6a; }
+
+  #action-ui {
+    position: absolute; bottom: 20px; left: 0; right: 0;
+    display: flex; justify-content: space-between; gap: 10px; padding: 0 10px;
+    pointer-events: none; z-index: 15;
+  }
+  .action-btn {
+    pointer-events: auto;
+    padding: 12px 10px; font-size: 14px; font-weight: bold;
+    border: 2px solid #fff; border-radius: 10px;
+    background: rgba(0,0,0,0.6); color: #fff;
+    backdrop-filter: blur(4px); margin-top: 0; flex: 1; text-align: center;
+    box-shadow: none; transition: transform 0.1s, opacity 0.2s;
+  }
+  
+  #start-screen {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(5,5,16,0.95); z-index: 100;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    cursor: pointer;
+  }
+  #start-screen h1 { color: #00ff88; font-size: 40px; animation: blink 1s infinite; text-shadow: 0 0 10px #00ff88; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+</style>
+</head>
+<body>
+
+<div id="start-screen">
+  <h1>TAP TO START</h1>
+  <p>※音が鳴ります</p>
+</div>
+
+<div id="ui">
+  <h2>防衛コア HP: <span id="hp" class="text-red">100</span> | Lv: <span id="level">1</span></h2>
+  <p>EXP: <span id="exp">0</span> / <span id="maxExp">10</span></p>
+  <p>生存時間: <span id="time">0</span> 秒</p>
+  <p class="text-green">基本攻撃 (Lv <span id="baseLv">1</span>) - 自動連射</p>
+  <p class="text-yellow">回転剣 (Lv <span id="swordLv">0</span>) - 3秒毎</p>
+  <p class="text-blue">射出刃 (Lv <span id="bladeLv">0</span>) - 3秒毎</p>
+  <p style="color: #ff9800; margin: 3px 0; font-size: 14px; font-weight: bold;">追従ハエ: <span id="flyCount">0</span> 匹</p>
+  <p style="color: #b388ff; margin: 3px 0; font-size: 14px; font-weight: bold;">召使ハエ: <span id="servantFlyCount">0</span> 匹</p>
+</div>
+
+<div id="action-ui">
+  <button id="btnDecoy" class="action-btn" style="border-color: #00ff00; color: #00ff00;">デコイ (0/2)</button>
+  <button id="btnLaser" class="action-btn" style="border-color: #ff3333; color: #ff3333;">レーザー (0/1)</button>
+  <button id="btnBomb" class="action-btn" style="border-color: #ff5500; color: #ff5500;">ボム (0)</button>
+</div>
+
+<button id="btnPause" class="action-btn" style="position: absolute; top: 15px; right: 15px; width: auto; margin: 0; padding: 10px 15px; z-index: 15; flex: none;">一時停止</button>
+
+<div id="gameover">
+  <h1>コア破壊...</h1>
+  <p>生存時間: <span id="finalTime">0</span>秒</p>
+  <p>コア Lv: <span id="finalLevel">1</span> | 回転剣 Lv: <span id="finalSword">0</span> | 射出刃 Lv: <span id="finalBlade">0</span></p>
+  <button id="restartBtn">システム再起動</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// --- 音響システム (Web Audio API) ---
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playSound(type) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gainNode = audioCtx.createGain();
+  osc.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  
+  const now = audioCtx.currentTime;
+  
+  if (type === 'shoot') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.exponentialRampToValueAtTime(110, now + 0.1);
+    gainNode.gain.setValueAtTime(0.03, now); // 音量小さめ
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  } else if (type === 'hit') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(440, now);
+    gainNode.gain.setValueAtTime(0.02, now); // ヒット音は控えめに
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === 'explosion') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(20, now + 0.3);
+    gainNode.gain.setValueAtTime(0.1, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  } else if (type === 'item') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    osc.frequency.setValueAtTime(1760, now + 0.05);
+    gainNode.gain.setValueAtTime(0.05, now);
+    gainNode.gain.linearRampToValueAtTime(0, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } else if (type === 'levelup') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(440, now);
+    osc.frequency.setValueAtTime(554, now + 0.1);
+    osc.frequency.setValueAtTime(659, now + 0.2);
+    osc.frequency.setValueAtTime(880, now + 0.3);
+    gainNode.gain.setValueAtTime(0.1, now);
+    gainNode.gain.linearRampToValueAtTime(0, now + 0.6);
+    osc.start(now);
+    osc.stop(now + 0.6);
+  } else if (type === 'laser') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1760, now);
+    osc.frequency.exponentialRampToValueAtTime(220, now + 0.5);
+    gainNode.gain.setValueAtTime(0.1, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.5);
+  } else if (type === 'bomb') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(10, now + 1.0);
+    gainNode.gain.setValueAtTime(0.2, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+    osc.start(now);
+    osc.stop(now + 1.0);
+  }
+}
+
+let cw, ch;
+function resize() {
+  cw = canvas.width = window.innerWidth;
+  ch = canvas.height = window.innerHeight;
+  if(player) {
+    player.y = ch - 60; // 常に画面下部に配置
+    player.x = Math.max(player.radius, Math.min(cw - player.radius, player.x));
+  }
+}
+window.addEventListener('resize', resize);
+
+// === ゲームオブジェクト ===
+let player;
+let centipedes = [];
+let bullets = [];
+let items = [];
+let gems = []; // 経験値ジェム
+let particles = [];
+let flies = [];
+let servantFlies = [];
+let turrets = []; // レーザー砲台
+let cellTurrets = []; // セル発射台
+let bombs = []; // 爆弾エフェクト
+let damageTexts = [];
+let decoys = []; // デコイ
+let frame = 0;
+let isGameOver = false;
+let isPaused = false;
+
+// 目標X座標（スライド操作用）
+let targetX = 0;
+
+// クールタイムを3秒（180フレーム）に設定
+const COOLDOWN = 180;
+
+function initGame() {
+  cw = canvas.width = window.innerWidth;
+  ch = canvas.height = window.innerHeight;
+  
+  targetX = cw / 2;
+  
+  player = {
+    x: cw/2, y: ch - 60, radius: 20, hp: 100,
+    level: 1, exp: 0, nextExp: 10,
+    baseTimer: 0, baseInterval: 20,
+    swordLv: 0, swordTimer: 0,
+    swordSwing: { active: false, timer: 0, duration: 20, hitSet: new Set() },
+    bladeLv: 0, bladeTimer: 0,
+    laserStock: 0, bombStock: 0, decoyStock: 0,
+    powerUpTimer: 0
+  };
+  
+  centipedes = []; bullets = []; items = []; gems = []; particles = []; flies = []; servantFlies = []; turrets = []; cellTurrets = []; bombs = []; damageTexts = []; decoys = [];
+  frame = 0; isGameOver = false; isPaused = false;
+  document.getElementById('btnPause').innerText = "一時停止";
+  document.getElementById('gameover').style.display = 'none';
+  updateUI();
+  loop();
+}
+
+// === 入力制御 (左右スライドのみ) ===
+function updatePointer(e) {
+  if (isGameOver || isPaused) return;
+  // ボタン等UI操作時は移動を無視
+  if (e.target && e.target.tagName && e.target.tagName.toUpperCase() === 'BUTTON') return;
+  let clientX;
+  if (e.touches && e.touches.length > 0) {
+    clientX = e.touches[0].clientX;
+  } else {
+    clientX = e.clientX;
+  }
+  // 画面端にはみ出さないように制限
+  targetX = Math.max(player.radius, Math.min(cw - player.radius, clientX));
+}
+window.addEventListener('mousemove', updatePointer);
+window.addEventListener('touchmove', updatePointer, {passive: false});
+window.addEventListener('touchstart', updatePointer, {passive: false});
+document.addEventListener('touchmove', e => e.preventDefault(), {passive: false});
+
+// 武器ボタンのイベント（タップ時に移動が反応しないように伝播停止）
+function stopProp(e) { e.stopPropagation(); }
+const btnLaser = document.getElementById('btnLaser');
+const btnBomb = document.getElementById('btnBomb');
+const btnDecoy = document.getElementById('btnDecoy');
+
+['touchstart', 'touchmove', 'mousedown'].forEach(ev => {
+  btnLaser.addEventListener(ev, stopProp, {passive: false});
+  btnBomb.addEventListener(ev, stopProp, {passive: false});
+  btnDecoy.addEventListener(ev, stopProp, {passive: false});
+});
+
+btnLaser.addEventListener('click', (e) => {
+  if (isGameOver || isPaused || player.laserStock <= 0) return;
+  player.laserStock--;
+  turrets.push({ x: player.x, y: player.y, life: 300, width: 24 });
+  playSound('laser');
+  updateUI();
+});
+
+btnBomb.addEventListener('click', (e) => {
+  if (isGameOver || isPaused || player.bombStock <= 0) return;
+  player.bombStock--;
+  // 大爆発エフェクトを発生
+  bombs.push({ x: player.x, y: player.y, radius: 10, maxRadius: Math.min(cw, ch) * 0.8, life: 30, maxLife: 30, hitSet: new Set() });
+  playSound('bomb');
+  updateUI();
+});
+
+btnDecoy.addEventListener('click', (e) => {
+  if (isGameOver || isPaused || player.decoyStock <= 0) return;
+  player.decoyStock--;
+  // 左下の少し上に配置 (15秒 = 900フレーム) UIと被らないように調整
+  decoys = [{ x: cw * 0.15, y: ch - 250, life: 900 }];
+  playSound('item'); 
+  updateUI();
+});
+
+document.getElementById('btnPause').addEventListener('click', (e) => {
+  if (isGameOver) return;
+  isPaused = !isPaused;
+  e.target.innerText = isPaused ? "再開" : "一時停止";
+});
+
+document.getElementById('restartBtn').addEventListener('click', initGame);
+
+document.getElementById('start-screen').addEventListener('click', function() {
+  initAudio();
+  this.style.display = 'none';
+  initGame();
+});
+
+// === メインループ ===
+function loop() {
+  if (isGameOver) return;
+  requestAnimationFrame(loop);
+  
+  if (isPaused) {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = '#fff';
+    ctx.font = "bold 40px 'Helvetica Neue', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("PAUSED", cw / 2, ch / 2);
+    ctx.textAlign = "left"; // 設定を戻す
+    return;
+  }
+  
+  // パワーアップのタイマー処理
+  if (player.powerUpTimer > 0) player.powerUpTimer--;
+
+  // プレイヤーの移動（滑らかに目標位置へ）
+  player.x += (targetX - player.x) * 0.3;
+
+  // 背景描画（軌跡を残す処理）
+  ctx.fillStyle = 'rgba(5, 5, 16, 0.4)';
+  ctx.fillRect(0, 0, cw, ch);
+  
+  handleSpawns();
+  handleWeapons();
+  updateBullets();
+  updateCentipedes();
+  updateItems();
+  updateGems();
+  updateFlies();
+  updateServantFlies();
+  updateTurrets(); // レーザー砲台処理
+  updateCellTurrets(); // セル発射台処理
+  updateBombs(); // ボム処理
+  updateDecoys(); // デコイ処理
+  updateParticles();
+  updateDamageTexts();
+  
+  drawPlayer();
+  
+  frame++;
+  if (frame % 30 === 0) updateUI();
+}
+
+// === ダメージテキスト処理 ===
+function addDamageText(x, y, damage, isCrit = false) {
+  let offsetX = (Math.random() - 0.5) * 20;
+  damageTexts.push({
+    x: x + offsetX, y: y,
+    text: Math.floor(damage) + (isCrit ? "!" : ""),
+    life: 40, maxLife: 40,
+    dy: -1 - Math.random(),
+    isCrit: isCrit
+  });
+}
+
+function updateDamageTexts() {
+  for (let i = damageTexts.length - 1; i >= 0; i--) {
+    let dt = damageTexts[i];
+    dt.y += dt.dy;
+    dt.life--;
+    
+    let alpha = Math.max(0, dt.life / dt.maxLife);
+    let color = dt.isCrit ? `255, 51, 51` : `255, 255, 255`;
+    let shadow = dt.isCrit ? `255, 0, 0` : `255, 51, 102`;
+    
+    ctx.fillStyle = `rgba(${color}, ${alpha})`;
+    ctx.shadowBlur = dt.isCrit ? 8 : 4;
+    ctx.shadowColor = `rgba(${shadow}, ${alpha})`;
+    
+    if (dt.isCrit) {
+        ctx.font = "bold 22px 'Helvetica Neue', sans-serif";
+    } else {
+        ctx.font = "bold 16px 'Helvetica Neue', sans-serif";
+    }
+    
+    ctx.fillText(dt.text, dt.x, dt.y);
+    
+    if (dt.life <= 0) damageTexts.splice(i, 1);
+  }
+  ctx.shadowBlur = 0;
+}
+
+// === 最も近い敵を探す関数 ===
+function getNearestEnemy(refX = player.x, refY = player.y) {
+  let nearest = null;
+  let minDist = Infinity;
+  for (let c of centipedes) {
+    for (let seg of c) {
+      let d = Math.hypot(refX - seg.x, refY - seg.y);
+      if (d < minDist) {
+        minDist = d;
+        nearest = seg;
+      }
+    }
+  }
+  return nearest;
+}
+
+// === 武器・攻撃処理 ===
+function handleWeapons() {
+  let nearestTarget = getNearestEnemy();
+  let mult = player.powerUpTimer > 0 ? 2 : 1;
+  
+  // 基本攻撃 (プレイヤーレベルに応じて強化)
+  player.baseTimer++;
+  if (player.baseTimer >= player.baseInterval && nearestTarget) {
+    let angle = Math.atan2(nearestTarget.y - player.y, nearestTarget.x - player.x);
+    
+    let numShots = 1;
+    if (player.level >= 5) numShots = 3;
+    else if (player.level >= 3) numShots = 2;
+    
+    let baseDamage = (8 + (player.level * 2)) * mult;
+
+    for (let i = 0; i < numShots; i++) {
+      let spread = 0;
+      if (numShots === 2) spread = (i === 0 ? -0.15 : 0.15);
+      if (numShots === 3) spread = (i - 1) * 0.15;
+      
+      let finalAngle = angle + spread;
+      bullets.push({
+        x: player.x,
+        y: player.y - player.radius,
+        vx: Math.cos(finalAngle)*12, vy: Math.sin(finalAngle)*12,
+        type: 'base', radius: 4 + (player.level > 1 ? 1 : 0), 
+        damage: baseDamage, active: true
+      });
+    }
+    playSound('shoot');
+    player.baseTimer = 0;
+  }
+
+  // 回転剣 (Lv 1以上)
+  if (player.swordLv > 0) {
+    player.swordTimer++;
+    if (player.swordTimer >= COOLDOWN) {
+      player.swordTimer = 0;
+      player.swordSwing.active = true;
+      player.swordSwing.timer = 0;
+      player.swordSwing.hitSet.clear();
+    }
+  }
+
+  // 射出刃 (Lv 1以上)
+  if (player.bladeLv > 0) {
+    player.bladeTimer++;
+    if (player.bladeTimer >= COOLDOWN && nearestTarget) {
+      player.bladeTimer = 0;
+      let angle = Math.atan2(nearestTarget.y - player.y, nearestTarget.x - player.x);
+      
+      // 射出刃のサイズ上限をレベル5までに制限
+      let sizeLevel = Math.min(player.bladeLv, 5);
+      let size = 15 + sizeLevel * 3;
+      let bladeDamage = (15 + player.bladeLv * 5) * mult;
+      
+      // レベル10ごとに発射数を増やす
+      let bladeCount = 1 + Math.floor(player.level / 10);
+      let spreadAngle = 0.2; // 扇状に広がる角度
+      let startAngle = angle - (spreadAngle * (bladeCount - 1)) / 2;
+
+      for (let i = 0; i < bladeCount; i++) {
+        let currentAngle = startAngle + i * spreadAngle;
+        bullets.push({
+          x: player.x, y: player.y,
+          vx: Math.cos(currentAngle)*6, vy: Math.sin(currentAngle)*6,
+          type: 'blade', radius: size, damage: bladeDamage,
+          angle: 0, hitSet: new Set(), active: true
+        });
+      }
+      playSound('shoot');
+    }
+  }
+
+  // 回転剣の判定と描画
+  if (player.swordSwing.active) {
+    let sw = player.swordSwing;
+    sw.timer++;
+    let progress = sw.timer / sw.duration;
+    let sizeLevel = Math.min(player.swordLv, 20); // サイズの最大をlvl20にする
+    let radius = 65 + sizeLevel * 15;
+    let damage = (25 + player.swordLv * 10) * mult;
+    
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(Math.PI * 2 * progress - Math.PI);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, radius, -0.4, 0.4); 
+    ctx.lineTo(0, 0);
+    ctx.fillStyle = 'rgba(255, 235, 59, 0.7)';
+    ctx.shadowBlur = 15; ctx.shadowColor = '#ffeb3b';
+    ctx.fill();
+    ctx.restore();
+
+    // 衝突判定
+    centipedes.forEach(centipede => {
+      centipede.forEach((seg, idx) => {
+        if (!sw.hitSet.has(seg)) {
+          let dist = Math.hypot(player.x - seg.x, player.y - seg.y);
+          // 回転刃の攻撃範囲を画面下半分に限定
+          if (dist < radius + seg.radius && seg.y > ch / 2) {
+            seg.hp -= damage;
+            seg.flashTimer = 5;
+            sw.hitSet.add(seg);
+            spawnParticles(seg.x, seg.y, '#ffeb3b');
+            addDamageText(seg.x, seg.y, damage);
+            playSound('hit');
+          }
+        }
+      });
+    });
+
+    if (sw.timer >= sw.duration) sw.active = false;
+  }
+}
+
+// === 弾丸・刃の処理 ===
+function updateBullets() {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    let b = bullets[i];
+    
+    // 追尾弾（発射台の弾など）の処理
+    if (b.isHoming) {
+      let target = getNearestEnemy(b.x, b.y);
+      if (target) {
+        let targetAngle = Math.atan2(target.y - b.y, target.x - b.x);
+        let currentAngle = Math.atan2(b.vy, b.vx);
+        let diff = targetAngle - currentAngle;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        
+        let speed = Math.hypot(b.vx, b.vy);
+        let newAngle = currentAngle + diff * 0.15; // 0.15で滑らかにカーブする
+        b.vx = Math.cos(newAngle) * speed;
+        b.vy = Math.sin(newAngle) * speed;
+      }
+    }
+    
+    b.x += b.vx; b.y += b.vy;
+    
+    if (b.type === 'base') {
+      ctx.fillStyle = '#00ff88'; ctx.shadowBlur = 10; ctx.shadowColor = '#00ff88';
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius, 0, Math.PI*2); ctx.fill();
+    } else if (b.type === 'blade') {
+      b.angle += 0.4;
+      ctx.save();
+      ctx.translate(b.x, b.y); ctx.rotate(b.angle);
+      ctx.fillStyle = '#00e5ff'; ctx.shadowBlur = 15; ctx.shadowColor = '#00e5ff';
+      ctx.beginPath();
+      for(let j=0; j<8; j++) {
+        let a = (Math.PI*2/8) * j;
+        let r = b.radius;
+        ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+        ctx.lineTo(Math.cos(a+0.2)*(r*0.6), Math.sin(a+0.2)*(r*0.6));
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    ctx.shadowBlur = 0;
+
+    // 衝突判定
+    let hitSomething = false;
+    for (let c = 0; c < centipedes.length; c++) {
+      let centipede = centipedes[c];
+      for (let s = 0; s < centipede.length; s++) {
+        let seg = centipede[s];
+        if (Math.hypot(b.x - seg.x, b.y - seg.y) < b.radius + seg.radius) {
+          if (b.type === 'base') {
+            let isCrit = Math.random() < 0.30; // 30%の固定クリティカル
+            let finalDmg = isCrit ? b.damage * 3 : b.damage;
+            seg.hp -= finalDmg;
+            seg.flashTimer = 5;
+            hitSomething = true;
+            spawnParticles(b.x, b.y, isCrit ? '#ff3333' : '#00ff88');
+            addDamageText(seg.x, seg.y, finalDmg, isCrit);
+            playSound('hit');
+            break;
+          } else if (b.type === 'blade') {
+            if (!b.hitSet.has(seg)) {
+              seg.hp -= b.damage;
+              seg.flashTimer = 5;
+              b.hitSet.add(seg);
+              spawnParticles(seg.x, seg.y, '#00e5ff');
+              addDamageText(seg.x, seg.y, b.damage);
+              playSound('hit');
+            }
+          }
+        }
+      }
+      if (hitSomething) break;
+    }
+
+    let outOfBounds = b.x < -50 || b.x > cw+50 || b.y > ch+50 || b.y < -50;
+    if (hitSomething || outOfBounds) bullets.splice(i, 1);
+  }
+}
+
+// === ムカデ（敵）処理 ===
+function handleSpawns() {
+  // 敵の出現頻度を大幅に下げる
+  let spawnRate = Math.max(240, 600 - Math.floor(frame / 30)); 
+  if (frame % spawnRate === 0) {
+    let x = Math.random() * cw;
+    let y = -50; 
+    // 敵の数を減らした分、1匹の長さを大幅に伸ばす（初期40節以上）
+    let length = 40 + Math.floor(Math.random() * (frame/300 + 20));
+    let centipede = [];
+    
+    // 生存時間30秒(1800フレーム)ごとに体力が段階的にアップ
+    let hpMultiplier = 1 + Math.floor(frame / 1800) * 0.5; 
+    let baseHp = (30 + frame/75) * hpMultiplier;
+    
+    let wavePhase = Math.random() * Math.PI * 2;
+    
+    // Lv15以上で15%の確率で金色の敵を出撃させる
+    let isGolden = (player.level >= 15 && Math.random() < 0.15);
+    if (isGolden) baseHp *= 2; // 体力2倍
+    
+    for (let i = 0; i < length; i++) {
+      centipede.push({
+        x: x, y: y, radius: i===0 ? 12 : 9, 
+        hp: baseHp * (i===0 ? 1.5 : 1),
+        isHead: i===0,
+        flashTimer: 0,
+        wavePhase: wavePhase,
+        isGolden: isGolden
+      });
+    }
+    centipedes.push(centipede);
+  }
+}
+
+function updateCentipedes() {
+  for (let i = centipedes.length - 1; i >= 0; i--) {
+    let cent = centipedes[i];
+    let deadIndex = -1;
+
+    ctx.shadowBlur = 10; 
+    for (let j = 0; j < cent.length; j++) {
+      let seg = cent[j];
+      ctx.shadowColor = seg.isGolden ? '#ffcc00' : '#ff3366'; // 金色なら影も黄色に
+      
+      if (seg.flashTimer > 0) seg.flashTimer--;
+      
+      if (seg.hp <= 0 && deadIndex === -1) deadIndex = j;
+
+      // 移動処理
+      let speed = 0.4 + (frame / 8000); 
+      if (seg.isGolden) speed *= 0.5; // 金色の敵はスピード半分
+
+      if (j === 0) {
+        seg.y += speed * 1.5; 
+        
+        // デコイが有効な場合はデコイを狙う
+        let targetX = player.x;
+        if (decoys.length > 0) {
+          targetX = decoys[0].x;
+        }
+
+        let dx = targetX - seg.x;
+        let homingSpeed = speed * 1.5;
+        let homingX = Math.sign(dx) * homingSpeed;
+        if (Math.abs(dx) < homingSpeed) homingX = dx;
+        
+        let wiggle = Math.sin(frame * 0.02 + seg.wavePhase) * (speed * 4.0);
+        seg.x += homingX + wiggle;
+      } else {
+        let leader = cent[j-1];
+        let dx = leader.x - seg.x;
+        let dy = leader.y - seg.y;
+        let dist = Math.hypot(dx, dy);
+        let spacing = 16;
+        if (dist > spacing) {
+          seg.x += (dx / dist) * (dist - spacing);
+          seg.y += (dy / dist) * (dist - spacing);
+        }
+      }
+
+      seg.x = Math.max(seg.radius, Math.min(cw - seg.radius, seg.x));
+
+      if (seg.flashTimer > 0) {
+        ctx.fillStyle = '#ffffff';
+      } else {
+        if (seg.isGolden) {
+          ctx.fillStyle = seg.isHead ? '#fff8b0' : '#ffcc00';
+        } else {
+          ctx.fillStyle = seg.isHead ? '#ff6666' : '#cc0033';
+        }
+      }
+      ctx.beginPath(); ctx.arc(seg.x, seg.y, seg.radius, 0, Math.PI*2); ctx.fill();
+      
+      // プレイヤーとの衝突判定
+      if (Math.hypot(player.x - seg.x, player.y - seg.y) < player.radius + seg.radius) {
+        player.hp -= 1.5;
+        seg.hp -= 5;
+        playSound('hit');
+        if (player.hp <= 0) gameOver();
+        updateUI();
+      }
+    }
+    ctx.shadowBlur = 0;
+
+    // 分裂・アイテム・ジェムドロップ処理
+    if (deadIndex !== -1) {
+      playSound('explosion');
+      let deadSeg = cent[deadIndex];
+      spawnParticles(deadSeg.x, deadSeg.y, deadSeg.isGolden ? '#ffcc00' : '#ff3366');
+      
+      // 経験値ジェムドロップ (60%の確率)
+      if (Math.random() < 0.60) {
+        gems.push({ x: deadSeg.x, y: deadSeg.y, radius: 4, isHomingToPlayer: false });
+      }
+
+      if (deadSeg.isGolden) {
+        // 金色の敵はボムを10個確定ドロップ
+        for (let b = 0; b < 10; b++) {
+          items.push({ x: deadSeg.x + (Math.random()-0.5)*40, y: deadSeg.y + (Math.random()-0.5)*40, type: 'bomb', radius: 8 });
+        }
+      } else {
+        // 通常の敵のドロップ
+        
+        // デコイアイテムドロップ (Lv10以上で2%の確率に低下)
+        if (player.level >= 10 && Math.random() < 0.02) {
+          items.push({ x: deadSeg.x, y: deadSeg.y, type: 'decoy', radius: 8 });
+        }
+
+        // パワーアップアイテムドロップ (10%の確率)
+        if (Math.random() < 0.10) {
+          items.push({ x: deadSeg.x, y: deadSeg.y, type: 'powerUp', radius: 8 });
+        }
+
+        // 武器アイテムドロップ (20%の確率)
+        if (Math.random() < 0.20) {
+          let rnd = Math.random();
+          let type = 'sword';
+          if (rnd < 0.15) type = 'sword';
+          else if (rnd < 0.30) type = 'blade';
+          else if (rnd < 0.45) type = 'fly';
+          else if (rnd < 0.60) type = 'servantFly';
+          else if (rnd < 0.75) type = 'laser';
+          else if (rnd < 0.878) type = 'bomb'; // ボムの確率を以前の値からさらに20%削減 (0.16 -> 0.128)
+          else type = 'cellTurret'; // 残り
+          items.push({ x: deadSeg.x, y: deadSeg.y, type: type, radius: 8 });
+        }
+      }
+
+      let headPart = cent.slice(0, deadIndex);
+      let tailPart = cent.slice(deadIndex + 1);
+      
+      if (tailPart.length > 0) {
+        tailPart[0].isHead = true;
+        tailPart[0].radius = 12;
+      }
+
+      centipedes.splice(i, 1);
+      if (tailPart.length > 0) centipedes.push(tailPart);
+      if (headPart.length > 0) centipedes.push(headPart);
+    }
+  }
+}
+
+// === 経験値ジェム処理 ===
+function updateGems() {
+  for (let i = gems.length - 1; i >= 0; i--) {
+    let g = gems[i];
+    let dist = Math.hypot(player.x - g.x, player.y - g.y);
+    
+    // 引き寄せ
+    if (dist < 150 || g.isHomingToPlayer) {
+      let angle = Math.atan2(player.y - g.y, player.x - g.x);
+      let speed = g.isHomingToPlayer ? 15 : 7;
+      g.x += Math.cos(angle) * speed;
+      g.y += Math.sin(angle) * speed;
+    }
+
+    ctx.shadowBlur = 8; ctx.shadowColor = '#00ff88';
+    ctx.fillStyle = '#00ff88';
+    ctx.beginPath(); ctx.arc(g.x, g.y, g.radius, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // 取得判定
+    if (dist < player.radius + g.radius) {
+      player.exp++;
+      playSound('item');
+      if (player.exp >= player.nextExp) {
+        player.level++;
+        playSound('levelup');
+        player.exp = 0;
+        player.nextExp = Math.floor(player.nextExp * 1.5);
+        player.hp = Math.min(100, player.hp + 20); // レベルアップで回復
+      }
+      gems.splice(i, 1);
+      updateUI();
+    }
+  }
+}
+
+// === アイテム処理 ===
+function updateItems() {
+  for (let i = items.length - 1; i >= 0; i--) {
+    let item = items[i];
+    
+    let dx = player.x - item.x;
+    let dy = player.y - item.y;
+    let dist = Math.hypot(dx, dy);
+    
+    let speed = 5;
+    item.x += (dx / dist) * speed;
+    item.y += (dy / dist) * speed;
+
+    ctx.shadowBlur = 10;
+    if (item.type === 'sword') ctx.fillStyle = '#ffeb3b';
+    else if (item.type === 'blade') ctx.fillStyle = '#00e5ff';
+    else if (item.type === 'fly') ctx.fillStyle = '#ff9800';
+    else if (item.type === 'servantFly') ctx.fillStyle = '#b388ff';
+    else if (item.type === 'laser') ctx.fillStyle = '#ff3333';
+    else if (item.type === 'bomb') ctx.fillStyle = '#ff5500';
+    else if (item.type === 'cellTurret') ctx.fillStyle = '#4caf50';
+    else if (item.type === 'powerUp') ctx.fillStyle = '#ff00ff'; // 赤紫のカプセル
+    else if (item.type === 'decoy') ctx.fillStyle = '#00ff00'; // 緑の星
+    ctx.shadowColor = ctx.fillStyle;
+    
+    ctx.save();
+    ctx.translate(item.x, item.y);
+    ctx.rotate(frame * 0.1);
+    if (item.type === 'decoy') {
+        ctx.beginPath();
+        for (let j = 0; j < 5; j++) {
+            ctx.lineTo(Math.cos((18 + j * 72) * Math.PI / 180) * item.radius*1.5, -Math.sin((18 + j * 72) * Math.PI / 180) * item.radius*1.5);
+            ctx.lineTo(Math.cos((54 + j * 72) * Math.PI / 180) * item.radius*0.7, -Math.sin((54 + j * 72) * Math.PI / 180) * item.radius*0.7);
+        }
+        ctx.closePath(); ctx.fill();
+    } else {
+        ctx.beginPath(); ctx.rect(-item.radius, -item.radius, item.radius*2, item.radius*2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.shadowBlur = 0;
+
+    if (dist < player.radius + item.radius) {
+      playSound('item');
+      if (item.type === 'sword') player.swordLv++;
+      if (item.type === 'blade') player.bladeLv++;
+      if (item.type === 'fly') {
+        // ハエは寿命300フレーム（5秒）、クールダウンなしで連続攻撃
+        flies.push({ x: player.x, y: player.y, life: 300, radius: 4 }); 
+      }
+      if (item.type === 'servantFly') {
+        // 召使ハエも寿命300フレーム
+        servantFlies.push({ x: player.x, y: player.y, life: 300, radius: 4 }); 
+      }
+      if (item.type === 'laser') {
+        if (player.laserStock < 1) player.laserStock++;
+      }
+      if (item.type === 'bomb') {
+        player.bombStock++;
+      }
+      if (item.type === 'cellTurret') {
+        if (cellTurrets.length >= 2) {
+          // すでに2個設置済みなら両方を赤にする（持続時間延長なし）
+          cellTurrets.forEach(ct => ct.isRed = true);
+        } else {
+          let newIndex = 0; 
+          if (cellTurrets.length === 1) {
+            newIndex = cellTurrets[0].positionIndex === 0 ? 1 : 0;
+            // すでに1個設置済みなら、それを赤にする（持続時間延長なし）
+            cellTurrets[0].isRed = true;
+          }
+          let cx = newIndex === 0 ? cw * 0.75 : cw * 0.25;
+          let cy = ch * 0.6;
+          // 新規設置分
+          cellTurrets.push({ x: cx, y: cy, life: 1800, timer: 0, positionIndex: newIndex, isRed: false }); 
+        }
+      }
+      if (item.type === 'powerUp') {
+        player.powerUpTimer = 300; // 5秒
+      }
+      if (item.type === 'decoy') {
+        if (player.decoyStock < 2) player.decoyStock++;
+      }
+      items.splice(i, 1);
+      updateUI();
+      player.hp = Math.min(100, player.hp + 3);
+    }
+  }
+}
+
+// === ハエ (Fly) 処理 ===
+function updateFlies() {
+  for (let i = flies.length - 1; i >= 0; i--) {
+    let fly = flies[i];
+    fly.life--;
+    
+    let nearestTarget = getNearestEnemy();
+    
+    if (nearestTarget) {
+      let angle = Math.atan2(nearestTarget.y - fly.y, nearestTarget.x - fly.x);
+      fly.x += Math.cos(angle) * 7;
+      fly.y += Math.sin(angle) * 7;
+      
+      // ダメージ判定（クールタイムなしで毎フレーム攻撃）
+      if (Math.hypot(fly.x - nearestTarget.x, fly.y - nearestTarget.y) < fly.radius + nearestTarget.radius) {
+        let mult = player.powerUpTimer > 0 ? 2 : 1;
+        let baseDmg = (2 + (player.level - 1) * 3) * mult; // レベルに応じてダメージ上昇
+        
+        // クリティカル判定 (基本5% + レベル毎2%、最大30%)
+        let critRate = Math.min(0.30, 0.05 + (player.level - 1) * 0.02);
+        let isCrit = Math.random() < critRate;
+        let finalDmg = isCrit ? baseDmg * 3 : baseDmg;
+
+        nearestTarget.hp -= finalDmg;
+        nearestTarget.flashTimer = 3;
+        spawnParticles(nearestTarget.x, nearestTarget.y, isCrit ? '#ff3333' : '#ff9800');
+        
+        // 毎フレーム文字が出ると処理落ちするため、テキスト表示は間引く（クリティカルは必ず表示）
+        if (frame % 4 === 0 || isCrit) {
+          addDamageText(nearestTarget.x, nearestTarget.y, finalDmg, isCrit);
+        }
+      }
+    } else {
+      let angle = Math.atan2(player.y - fly.y, player.x - fly.x);
+      fly.x += Math.cos(angle) * 4;
+      fly.y += Math.sin(angle) * 4;
+    }
+    
+    fly.x += (Math.random() - 0.5) * 8;
+    fly.y += (Math.random() - 0.5) * 8;
+
+    ctx.shadowBlur = 10; 
+    ctx.shadowColor = '#ff9800';
+    ctx.fillStyle = '#ff9800';
+    ctx.beginPath(); ctx.arc(fly.x, fly.y, fly.radius, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (fly.life <= 0) flies.splice(i, 1);
+  }
+}
+
+// === 召使ハエ (Servant Fly) 処理 ===
+function updateServantFlies() {
+  for (let i = servantFlies.length - 1; i >= 0; i--) {
+    let fly = servantFlies[i];
+    fly.life--;
+    
+    let nearestGem = null;
+    let minDist = Infinity;
+    for (let g of gems) {
+      if (g.isHomingToPlayer) continue; // 既に回収中のものは無視
+      let d = Math.hypot(fly.x - g.x, fly.y - g.y);
+      if (d < minDist) {
+        minDist = d;
+        nearestGem = g;
+      }
+    }
+    
+    if (nearestGem) {
+      let angle = Math.atan2(nearestGem.y - fly.y, nearestGem.x - fly.x);
+      fly.x += Math.cos(angle) * 8;
+      fly.y += Math.sin(angle) * 8;
+      
+      // ジェムに近づいたらプレイヤーへ向かわせるフラグを立てる
+      if (Math.hypot(fly.x - nearestGem.x, fly.y - nearestGem.y) < fly.radius + nearestGem.radius + 15) {
+         nearestGem.isHomingToPlayer = true;
+      }
+    } else {
+      let angle = Math.atan2(player.y - fly.y, player.x - fly.x);
+      fly.x += Math.cos(angle) * 5;
+      fly.y += Math.sin(angle) * 5;
+    }
+    
+    fly.x += (Math.random() - 0.5) * 6;
+    fly.y += (Math.random() - 0.5) * 6;
+
+    ctx.shadowBlur = 10; 
+    ctx.shadowColor = '#b388ff';
+    ctx.fillStyle = '#b388ff';
+    ctx.beginPath(); ctx.arc(fly.x, fly.y, fly.radius, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (fly.life <= 0) servantFlies.splice(i, 1);
+  }
+}
+
+// === レーザー砲台 (Laser Turret) 処理 ===
+function updateTurrets() {
+  for (let i = turrets.length - 1; i >= 0; i--) {
+    let t = turrets[i];
+    t.life--;
+    
+    // 砲台本体の描画
+    ctx.shadowBlur = 10; ctx.shadowColor = '#ff3333';
+    ctx.fillStyle = '#ff3333';
+    ctx.fillRect(t.x - 12, t.y - 10, 24, 20);
+    
+    // 照射レーザーの描画
+    let laserAlpha = Math.min(1, t.life / 30); // 消える直前はフェードアウト
+    ctx.fillStyle = `rgba(255, 51, 51, ${laserAlpha * 0.6})`;
+    ctx.shadowColor = '#ff3333';
+    ctx.fillRect(t.x - t.width/2, 0, t.width, t.y);
+    ctx.fillStyle = `rgba(255, 255, 255, ${laserAlpha})`;
+    ctx.fillRect(t.x - t.width/4, 0, t.width/2, t.y);
+    ctx.shadowBlur = 0;
+
+    // 当たり判定 (連続ヒットしすぎないよう5フレーム毎にダメージ)
+    if (frame % 5 === 0) {
+      let mult = player.powerUpTimer > 0 ? 2 : 1;
+      for (let c of centipedes) {
+        for (let seg of c) {
+          if (seg.x + seg.radius > t.x - t.width/2 && seg.x - seg.radius < t.x + t.width/2 && seg.y < t.y) {
+            let dmg = 5 * mult;
+            seg.hp -= dmg;
+            seg.flashTimer = 3;
+            addDamageText(seg.x, seg.y, dmg);
+            spawnParticles(seg.x, seg.y, '#ff3333');
+          }
+        }
+      }
+    }
+    
+    if (t.life <= 0) turrets.splice(i, 1);
+  }
+}
+
+// === セル発射台 (Cell Turret) 処理 ===
+function updateCellTurrets() {
+  for (let i = cellTurrets.length - 1; i >= 0; i--) {
+    let ct = cellTurrets[i];
+    ct.life--;
+    ct.timer++;
+    
+    // 発射台の描画
+    let color = ct.isRed ? '#ff3333' : '#4caf50';
+    let strokeColor = ct.isRed ? '#ff8888' : '#00ff88';
+    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    ctx.fillStyle = color;
+    ctx.fillRect(ct.x - 12, ct.y - 12, 24, 24);
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(ct.x, ct.y, 6, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // カウントダウン表示（残り秒数）
+    ctx.fillStyle = color;
+    ctx.font = "bold 14px 'Helvetica Neue', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(Math.ceil(ct.life / 60), ct.x, ct.y + 28);
+    ctx.textAlign = "left"; // 元に戻す
+    
+    // 発射 (15フレームに1回上向きに発射)
+    if (ct.timer >= 15) {
+      ct.timer = 0;
+      let mult = player.powerUpTimer > 0 ? 2 : 1;
+      let baseDamage = (8 + (player.level * 2)) * mult; 
+      if (ct.isRed) baseDamage *= 3; // 赤色の場合は攻撃力3倍
+      bullets.push({
+        x: ct.x,
+        y: ct.y - 15,
+        vx: 0, vy: -15, // 真上へ高速発射
+        type: 'base', radius: 4 + (player.level > 1 ? 1 : 0), 
+        damage: baseDamage, active: true,
+        isHoming: true // 追尾弾にするフラグ
+      });
+      playSound('shoot');
+    }
+    
+    if (ct.life <= 0) cellTurrets.splice(i, 1);
+  }
+}
+
+// === ボム (Bomb) 処理 ===
+function updateBombs() {
+  for (let i = bombs.length - 1; i >= 0; i--) {
+    let b = bombs[i];
+    b.life--;
+    let progress = 1 - (b.life / b.maxLife);
+    b.radius = b.maxRadius * Math.pow(progress, 0.5); 
+    
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 85, 0, ${b.life / b.maxLife * 0.4})`;
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(255, 255, 255, ${b.life / b.maxLife})`;
+    ctx.stroke();
+    ctx.restore();
+    
+    let mult = player.powerUpTimer > 0 ? 2 : 1;
+    let dmg = (100 + player.level * 50) * mult; // レベル比例の超ダメージ
+    
+    for (let c = 0; c < centipedes.length; c++) {
+      let centipede = centipedes[c];
+      for (let s = 0; s < centipede.length; s++) {
+        let seg = centipede[s];
+        if (!b.hitSet.has(seg)) {
+          if (Math.hypot(b.x - seg.x, b.y - seg.y) < b.radius + seg.radius) {
+            seg.hp -= dmg;
+            seg.flashTimer = 10;
+            b.hitSet.add(seg);
+            addDamageText(seg.x, seg.y, dmg, true);
+            spawnParticles(seg.x, seg.y, '#ff5500');
+          }
+        }
+      }
+    }
+    
+    if (b.life <= 0) bombs.splice(i, 1);
+  }
+}
+
+// === デコイ (Decoy) 処理 ===
+function updateDecoys() {
+  for (let i = decoys.length - 1; i >= 0; i--) {
+    let d = decoys[i];
+    d.life--;
+    
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(frame * 0.05); // ゆっくり回転
+    ctx.beginPath();
+    for (let j = 0; j < 5; j++) {
+        ctx.lineTo(Math.cos((18 + j * 72) * Math.PI / 180) * 15, -Math.sin((18 + j * 72) * Math.PI / 180) * 15);
+        ctx.lineTo(Math.cos((54 + j * 72) * Math.PI / 180) * 7, -Math.sin((54 + j * 72) * Math.PI / 180) * 7);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#00ff00';
+    ctx.shadowBlur = 15; ctx.shadowColor = '#00ff00';
+    ctx.fill();
+    ctx.restore();
+
+    // カウントダウン表示
+    ctx.fillStyle = '#00ff00';
+    ctx.font = "bold 14px 'Helvetica Neue', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(Math.ceil(d.life / 60), d.x, d.y + 28);
+    ctx.textAlign = "left";
+
+    if (d.life <= 0) decoys.splice(i, 1);
+  }
+}
+
+// === プレイヤー描画 ===
+function drawPlayer() {
+  if (player.powerUpTimer > 0) {
+    // パワーアップ中の赤いオーラ（点滅）
+    if (Math.floor(frame / 5) % 2 === 0) {
+      ctx.shadowBlur = 20; 
+      ctx.shadowColor = '#ff00ff';
+      ctx.fillStyle = 'rgba(255, 0, 255, 0.4)';
+      ctx.beginPath();
+      ctx.arc(player.x, player.y, player.radius + 15, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  ctx.shadowBlur = 15; ctx.shadowColor = '#00ff88';
+  
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(-5, -25, 10, 20); 
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2);
+  ctx.fillStyle = '#111';
+  ctx.fill();
+  ctx.strokeStyle = '#00ff88';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius * 0.5, 0, Math.PI*2);
+  ctx.fillStyle = '#00ff88';
+  ctx.fill();
+  
+  ctx.shadowBlur = 0;
+}
+
+// === パーティクル（破片） ===
+function spawnParticles(x, y, color) {
+  for (let i = 0; i < 4; i++) {
+    particles.push({
+      x: x, y: y,
+      vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6,
+      life: 15, color: color
+    });
+  }
+}
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.life--;
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = p.life / 15;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+}
+
+// === UI & システム ===
+function updateUI() {
+  document.getElementById('hp').innerText = Math.max(0, Math.floor(player.hp));
+  document.getElementById('level').innerText = player.level;
+  document.getElementById('baseLv').innerText = player.level;
+  document.getElementById('exp').innerText = player.exp;
+  document.getElementById('maxExp').innerText = player.nextExp;
+  document.getElementById('time').innerText = Math.floor(frame / 60);
+  document.getElementById('swordLv').innerText = player.swordLv;
+  document.getElementById('bladeLv').innerText = player.bladeLv;
+  document.getElementById('flyCount').innerText = flies.length;
+  document.getElementById('servantFlyCount').innerText = servantFlies.length;
+  
+  // ボタンUIの更新
+  const btnLaser = document.getElementById('btnLaser');
+  const btnBomb = document.getElementById('btnBomb');
+  const btnDecoy = document.getElementById('btnDecoy');
+  btnLaser.innerText = `レーザー (${player.laserStock}/1)`;
+  btnBomb.innerText = `ボム (${player.bombStock})`;
+  btnDecoy.innerText = `デコイ (${player.decoyStock}/2)`;
+  btnLaser.style.opacity = player.laserStock > 0 ? '1' : '0.5';
+  btnBomb.style.opacity = player.bombStock > 0 ? '1' : '0.5';
+  btnDecoy.style.opacity = player.decoyStock > 0 ? '1' : '0.5';
+}
+
+function gameOver() {
+  isGameOver = true;
+  document.getElementById('gameover').style.display = 'block';
+  document.getElementById('finalTime').innerText = Math.floor(frame / 60);
+  document.getElementById('finalLevel').innerText = player.level;
+  document.getElementById('finalSword').innerText = player.swordLv;
+  document.getElementById('finalBlade').innerText = player.bladeLv;
+}
+</script>
+</body>
+</html>
