@@ -97,6 +97,8 @@
 
 <button id="btnPause" class="action-btn" style="position: absolute; top: 15px; right: 15px; width: auto; margin: 0; padding: 10px 15px; z-index: 15; flex: none;">一時停止</button>
 
+<div id="version-info" style="position: absolute; top: 25px; right: 110px; font-size: 14px; font-weight: bold; color: #fff; z-index: 15; pointer-events: none; text-shadow: 0 0 5px rgba(0,0,0,1);">ver.1</div>
+
 <div id="gameover">
   <h1>コア破壊...</h1>
   <p>生存時間: <span id="finalTime">0</span>秒</p>
@@ -786,8 +788,8 @@ function updateCentipedes() {
         else if (rndWep < 0.30) type = 'blade';
         else if (rndWep < 0.45) type = 'fly';
         else if (rndWep < 0.60) type = 'servantFly';
-        else if (rndWep < 0.75) type = 'laser';
-        else if (rndWep < 0.878) type = 'bomb';
+        else if (rndWep < 0.735) type = 'laser'; // レーザーのドロップ率を15%から13.5%に低下
+        else if (rndWep < 0.863) type = 'bomb'; // レーザーの低下分を後ろにずらして調整
         else type = 'cellTurret';
         items.push({ x: deadSeg.x, y: deadSeg.y, type: type, radius: 8 });
       }
@@ -837,7 +839,11 @@ function updateGems() {
         }
         playSound('levelup');
         player.exp = 0;
-        player.nextExp = Math.floor(player.nextExp * 1.5);
+        
+        // レベル100以降は必要経験値の増加率を3倍に
+        let expMultiplier = player.level >= 100 ? 3.0 : 1.5;
+        player.nextExp = Math.floor(player.nextExp * expMultiplier);
+        
         player.hp = Math.min(100, player.hp + 20); // レベルアップで回復
       }
       gems.splice(i, 1);
