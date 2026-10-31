@@ -518,7 +518,7 @@ function handleWeapons() {
     let progress = sw.timer / sw.duration;
     let sizeLevel = Math.min(player.swordLv, 20); // サイズの最大をlvl20にする
     let radius = 65 + sizeLevel * 15;
-    let damage = (25 + player.swordLv * 10) * mult;
+    let damage = (25 + player.swordLv * 10) * mult * 0.85; // 威力を15%減少
     
     ctx.save();
     ctx.translate(player.x, player.y);
@@ -769,11 +769,11 @@ function updateCentipedes() {
       if (rndDrop < 0.005) {
         // 0.5%: クールタイムリセット
         items.push({ x: deadSeg.x, y: deadSeg.y, type: 'cooldownReset', radius: 8 });
-      } else if (rndDrop < 0.015) {
-        // +1.0% = 1.5%: バリア
+      } else if (rndDrop < 0.015 && player.level >= 14) {
+        // +1.0% = 1.5%: バリア (レベル14からドロップ)
         items.push({ x: deadSeg.x, y: deadSeg.y, type: 'barrier', radius: 8 });
-      } else if (rndDrop < 0.025) {
-        // +1.0% = 2.5%: デコイ
+      } else if (rndDrop < 0.025 && player.level >= 10) {
+        // +1.0% = 2.5%: デコイ (レベル10からドロップ)
         items.push({ x: deadSeg.x, y: deadSeg.y, type: 'decoy', radius: 8 });
       } else if (rndDrop < 0.125) {
         // +10% = 12.5%: パワーアップ
