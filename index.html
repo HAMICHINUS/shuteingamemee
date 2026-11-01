@@ -553,37 +553,37 @@ function updateCentipedes() {
         playSound('explosion'); spawnParticles(ds.x, ds.y, ds.isGolden?'#ffcc00':(ds.isBrown?'#d2691e':'#ff3366'));
         let isDbl = ds.killedByGoldenFly || false;
         
+        // 1. EXP Gem Drop (100% for both Normal and Brown)
         if (ds.isBrown) {
           gems.push({ x: ds.x, y: ds.y, radius: 5, isHomingToPlayer: false, value: 3 * (isDbl?2:1), color: '#d2691e' }); // 100% 3x EXP
-          if (Math.random() < 0.20) items.push({ x: ds.x, y: ds.y, type: Math.random()<0.5?'fly':'servantFly', radius: 8, isDouble: isDbl });
         } else {
-          // Normal EXP gem
-          if (Math.random() < 0.60) gems.push({ x: ds.x, y: ds.y, radius: 4, isHomingToPlayer: false, value: 1*(isDbl?2:1), color: isDbl?'#ffcc00':'#00ff88' });
-          
-          if (ds.isGolden) {
-            // Gold enemy drops
-            if (Math.random() < 0.01) { goldenFlies.push({ x: ds.x, y: ds.y, life: 300, radius: 5 }); spawnParticles(ds.x, ds.y, '#ffd700'); }
-            if (Math.random() < 0.30) items.push({ x: ds.x, y: ds.y, type: 'decoy', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.30) items.push({ x: ds.x, y: ds.y, type: 'barrier', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.30) items.push({ x: ds.x, y: ds.y, type: 'powerUp', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.30) items.push({ x: ds.x, y: ds.y, type: 'cooldownReset', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.30) {
-                const wps = ['sword', 'blade', 'fly', 'servantFly', 'laser', 'bomb', 'cellTurret'];
-                items.push({ x: ds.x, y: ds.y, type: wps[Math.floor(Math.random() * wps.length)], radius: 8, isDouble: isDbl });
-            }
-            if (Math.random() < 0.30) items.push({ x: ds.x, y: ds.y, type: 'missile', radius: 8, isDouble: isDbl });
-          } else {
-            // Normal drops
-            if (player.level >= 10 && Math.random() < 0.002) items.push({ x: ds.x, y: ds.y, type: 'decoy', radius: 8, isDouble: isDbl });
-            if (player.level >= 14 && Math.random() < 0.002) items.push({ x: ds.x, y: ds.y, type: 'barrier', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'powerUp', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'cooldownReset', radius: 8, isDouble: isDbl });
-            if (Math.random() < 0.15) {
-                const wps = ['sword', 'blade', 'fly', 'servantFly', 'laser', 'bomb', 'cellTurret'];
-                items.push({ x: ds.x, y: ds.y, type: wps[Math.floor(Math.random() * wps.length)], radius: 8, isDouble: isDbl });
-            }
-            if (Math.random() < 0.01) items.push({ x: ds.x, y: ds.y, type: 'missile', radius: 8, isDouble: isDbl });
+          gems.push({ x: ds.x, y: ds.y, radius: 4, isHomingToPlayer: false, value: 1*(isDbl?2:1), color: isDbl?'#ffcc00':'#00ff88' }); // 100% 1x EXP
+        }
+
+        // 2. Item Drops
+        if (ds.isGolden) {
+          // Gold enemy drops (2% each, Golden Fly 10%)
+          if (Math.random() < 0.10) { goldenFlies.push({ x: ds.x, y: ds.y, life: 300, radius: 5 }); spawnParticles(ds.x, ds.y, '#ffd700'); }
+          if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'decoy', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'barrier', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'powerUp', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'cooldownReset', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.02) {
+              const wps = ['sword', 'blade', 'fly', 'servantFly', 'laser', 'bomb', 'cellTurret'];
+              items.push({ x: ds.x, y: ds.y, type: wps[Math.floor(Math.random() * wps.length)], radius: 8, isDouble: isDbl });
           }
+          if (Math.random() < 0.02) items.push({ x: ds.x, y: ds.y, type: 'missile', radius: 8, isDouble: isDbl });
+        } else {
+          // Normal & Brown enemy drops
+          if (player.level >= 10 && Math.random() < 0.0001) items.push({ x: ds.x, y: ds.y, type: 'decoy', radius: 8, isDouble: isDbl });
+          if (player.level >= 14 && Math.random() < 0.0001) items.push({ x: ds.x, y: ds.y, type: 'barrier', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.01) items.push({ x: ds.x, y: ds.y, type: 'powerUp', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.0005) items.push({ x: ds.x, y: ds.y, type: 'cooldownReset', radius: 8, isDouble: isDbl });
+          if (Math.random() < 0.08) {
+              const wps = ['sword', 'blade', 'fly', 'servantFly', 'laser', 'bomb', 'cellTurret'];
+              items.push({ x: ds.x, y: ds.y, type: wps[Math.floor(Math.random() * wps.length)], radius: 8, isDouble: isDbl });
+          }
+          if (Math.random() < 0.001) items.push({ x: ds.x, y: ds.y, type: 'missile', radius: 8, isDouble: isDbl });
         }
       }
       let head = cent.slice(0, deadIndex); let tail = cent.slice(deadIndex + 1);
